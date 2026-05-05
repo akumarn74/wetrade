@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WeTrade SIM Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; background:#0f172a; color:#e2e8f0; }
+      button { margin-right: 8px; padding: 8px 12px; }
+      .grid { display:grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap:16px; }
+      .card { border:1px solid #334155; border-radius:8px; padding:12px; background:#111827; }
+      pre { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>WeTrade Simulation Dashboard</h1>
+    <p>SIM mode only. Hard risk gates remain authoritative.</p>
+    <p style="max-width:720px;font-size:14px;color:#94a3b8">
+      If the API runs with <code>REQUIRE_API_KEY=true</code>, set the same value here as <code>API_ADMIN_KEY</code> (stored only in this browser via <code>sessionStorage</code>).
+    </p>
+    <p>
+      <label>API key (optional): <input id="apiKey" type="password" autocomplete="off" placeholder="API_ADMIN_KEY when required" style="width:min(360px,90vw)" /></label>
+      <button type="button" onclick="saveApiKey()">Save for this tab</button>
+    </p>
+    <div>
+      <button onclick="toggleTrading(true)">Enable Trading</button>
+      <button onclick="toggleTrading(false)">Disable Trading</button>
+      <button onclick="toggleRuntime(true)">Start Runtime</button>
+      <button onclick="toggleRuntime(false)">Pause Runtime</button>
+      <button onclick="runSignal()">Run Signal Cycle</button>
+      <button onclick="runMonitor()">Run Monitor Cycle</button>
+      <button onclick="refreshAll()">Refresh</button>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Account</h3><pre id="account"></pre></div>
+      <div class="card"><h3>Risk State</h3><pre id="risk"></pre></div>
+      <div class="card"><h3>Orders</h3><pre id="orders"></pre></div>
+      <div class="card"><h3>Positions</h3><pre id="positions"></pre></div>
+      <div class="card"><h3>Trades</h3><pre id="trades"></pre></div>
+      <div class="card"><h3>Promotion Gate</h3><pre id="promotion"></pre></div>
+      <div class="card"><h3>Events</h3><pre id="events"></pre></div>
+    </div>
+
+    <script>
+      const api = '/api';
+      function apiHeaders(opts) {
+        const withJson = opts && opts.jsonBody;
+        const h = {};
+        if (withJson) h['Content-Type'] = 'application/json';
+        const key = sessionStorage.getItem('wetrade_api_key');
+        if (key) h['X-API-Key'] = key;
+        return h;
+      }
+      function saveApiKey() {
+        const v = document.getElementById('apiKey').value.trim();
+        if (v) sessionStorage.setItem('wetrade_api_key', v);
+        else sessionStorage.removeItem('wetrade_api_key');
+        refreshAll();
+      }
+      (function initApiKeyField() {
+        const k = sessionStorage.getItem('wetrade_api_key');
+        if (k) document.getElementById('apiKey').value = k;
+      })();
+      async function getJson(path) {
+        const r = await fetch(`${api}${path}`, { headers: apiHeaders({ jsonBody: false }) });
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return { _error: 'non_json', status: r.status, text: await r.text() };
+        return r.json();
+      }
+      async function postJson(path, body) {
+        await fetch(`${api}${path}`, { method:'POST', headers: apiHeaders({ jsonBody: true }), body: JSON.stringify(body || {}) });
+      }
+      async function toggleTrading(enabled){ await postJson('/trading-enabled', {enabled}); await refreshAll(); }
+      async function toggleRuntime(running){ await postJson('/runtime', {running}); await refreshAll(); }
+      async function runSignal(){ await postJson('/cycle/signal'); await refreshAll(); }
+      async function runMonitor(){ await postJson('/cycle/monitor'); await refreshAll(); }
+      async function refreshAll(){
+        document.getElementById('account').textContent = JSON.stringify(await getJson('/account'), null, 2);
+        document.getElementById('risk').textContent = JSON.stringify(await getJson('/risk'), null, 2);
+        document.getElementById('orders').textContent = JSON.stringify(await getJson('/orders'), null, 2);
+        document.getElementById('positions').textContent = JSON.stringify(await getJson('/positions'), null, 2);
+        document.getElementById('trades').textContent = JSON.stringify(await getJson('/trades'), null, 2);
+        document.getElementById('promotion').textContent = JSON.stringify(await getJson('/promotion-gate'), null, 2);
+        document.getElementById('events').textContent = JSON.stringify(await getJson('/events'), null, 2);
+      }
+      refreshAll();
+    </script>
+  </body>
+</html>

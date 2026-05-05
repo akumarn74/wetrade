@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic-settings
+httpx
+pytest
+pytest-asyncio
+git+https://github.com/webull-inc/openapi-python-sdk.git#subdirectory=webull-python-sdk-core
+git+https://github.com/webull-inc/openapi-python-sdk.git#subdirectory=webull-python-sdk-mdata
+git+https://github.com/webull-inc/openapi-python-sdk.git#subdirectory=webull-python-sdk-trade
