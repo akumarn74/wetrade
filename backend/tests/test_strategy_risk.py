@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 
+from app import config as config_module
+from app.config import Settings
+from app.risk import manager as risk_module
 from app.risk.manager import RiskManager
 from app.trading.strategy import StrategyEngine
 from app.trading.types import SignalContext
@@ -27,7 +30,11 @@ def test_call_signal_rules():
     assert signal.side == 'CALL'
 
 
-def test_risk_denies_when_disabled():
+def test_risk_denies_when_disabled(monkeypatch):
+    monkeypatch.setenv('TRADING_ENABLED', 'false')
+    cfg = Settings()
+    config_module.settings = cfg
+    risk_module.settings = cfg
     rm = RiskManager()
     decision = rm.approve_entry(datetime.now(timezone.utc))
     assert decision.approved is False

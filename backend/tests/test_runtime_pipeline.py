@@ -3,6 +3,7 @@ from sqlmodel import select
 
 from app.config import Settings
 from app import config as config_module
+from app.risk import manager as risk_module
 from app.runtime import engine as engine_module
 from app.runtime.engine import TradingRuntime
 from app.storage.db import get_session, init_db
@@ -12,8 +13,10 @@ from app.storage.models import Order, Signal
 @pytest.mark.asyncio
 async def test_signal_to_order_pipeline(monkeypatch):
     monkeypatch.setenv('APP_MODE', 'SIM')
+    monkeypatch.setenv('TRADING_ENABLED', 'false')
     config_module.settings = Settings()
     engine_module.settings = config_module.settings
+    risk_module.settings = config_module.settings
     init_db()
     runtime = TradingRuntime()
     runtime.risk.state.trades_today = 0
