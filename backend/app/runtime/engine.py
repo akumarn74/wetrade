@@ -302,7 +302,8 @@ class TradingRuntime:
                 'sudden_option_drop_pct': settings.sudden_option_drop_pct,
             },
         }
-        checks['trading_enabled'] = {'ok': settings.trading_enabled, 'value': settings.trading_enabled}
+        # Informational only: readiness must work while TRADING_ENABLED=false (arm after preflight).
+        checks['trading_enabled'] = {'ok': True, 'value': settings.trading_enabled, 'armed': settings.trading_enabled}
 
         if settings.app_mode in {'WEBULL_PAPER', 'WEBULL_LIVE'}:
             try:
