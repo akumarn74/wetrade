@@ -44,7 +44,8 @@ Also valid: **nginx + TLS** in front, or **VPN-only** subnet with bind on privat
 
 ## Python version
 
-Use **Python 3.11** (or 3.12) for Webull SDK installs. The repo’s `.venv-prod311` pattern matches that. Python 3.13 is blocked for Webull modes in `validate_startup_config()`.
+- **Mac dev:** Python **3.11** (or 3.12 for non-Webull work) matches `.venv-prod311`. Python **3.13** is blocked for Webull modes in `validate_startup_config()`.
+- **Linux VPS + Webull:** the official Webull OpenAPI SDK pins **`grpcio==1.51.1`**, which has reliable **manylinux wheels for Python 3.10 / 3.11**. On **Python 3.12**, `pip` usually **compiles gRPC from source** (slow and often fails on small droplets). Use **`python3.10 -m venv .venv-prod311`** on the server, then run `bash backend/scripts/install_deps_droplet.sh` (that script refuses 3.12+ to avoid a 10+ minute dead-end).
 
 ## Production process (systemd sketch)
 
