@@ -15,9 +15,13 @@ fi
 
 python -m pip install -U "pip>=24.2" "setuptools>=70,<81" wheel
 
-# Install wheels first (clear failure if none exist for this platform).
-python -m pip install --only-binary=:all: -c backend/constraints-grpc.txt \
-  "grpcio==1.66.2" "grpcio-tools==1.66.2"
+# Prefer wheels; Webull pins grpcio 1.51.1. Py3.12 may need compile (add 4G+ swap + build-essential).
+if ! python -m pip install --only-binary=:all: -c backend/constraints-grpc.txt \
+  "grpcio==1.51.1" "grpcio-tools==1.51.1" 2>/dev/null; then
+  echo "No grpc wheels for this platform; compiling (needs RAM/swap + g++) ..." >&2
+  python -m pip install --no-build-isolation -c backend/constraints-grpc.txt \
+    "grpcio==1.51.1" "grpcio-tools==1.51.1"
+fi
 
 # One resolve for the rest; constraints prevent grpc from being upgraded/rebuilt.
 python -m pip install --no-build-isolation -c backend/constraints-grpc.txt -r backend/requirements.txt

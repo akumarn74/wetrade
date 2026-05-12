@@ -2,9 +2,9 @@
 setuptools>=70,<81
 wheel
 
-# Pin gRPC first so pip uses manylinux wheels (avoids g++/source builds on small VPS).
-grpcio==1.66.2
-grpcio-tools==1.66.2
+# Pin gRPC to Webull SDK–required versions (quotes-core depends on grpcio==1.51.1).
+grpcio==1.51.1
+grpcio-tools==1.51.1
 
 fastapi
 uvicorn[standard]
