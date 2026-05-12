@@ -4,7 +4,8 @@
 #   cd /root/wetrade && source .venv-prod311/bin/activate && bash backend/scripts/install_deps_droplet.sh
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Script lives at backend/scripts/ — repo root is two levels up.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
