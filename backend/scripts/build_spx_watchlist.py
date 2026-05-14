@@ -76,6 +76,12 @@ def main() -> int:
         help="Strike encoded as int(strike*scale) zero-padded to 8 digits (100 matches .env.example)",
     )
     parser.add_argument("--print-env-line", action="store_true", help="Print OPTION_WATCHLIST=... for .env paste")
+    parser.add_argument(
+        "--underlying",
+        type=str,
+        default=None,
+        help="Ticker root for generated symbols and Webull /trade/security symbol (default: TRADE_SYMBOL from .env, else SPX). Use SPXW for many SPX weeklies.",
+    )
     args = parser.parse_args()
 
     try:
@@ -85,6 +91,7 @@ def main() -> int:
         return 2
 
     try:
+        from app.config import settings as app_settings
         from app.integrations.spx_option_symbol import encode_spx_option_ticker
         from app.integrations.webull_client import WebullAPIClient
         from app.integrations.webull_option_quotes import fetch_option_rows_trade_security
@@ -105,18 +112,26 @@ def main() -> int:
     for k in range(-args.strikes_each_side, args.strikes_each_side + 1):
         strikes.append(atm + k * args.strike_step)
 
+    root = (args.underlying or app_settings.trade_symbol or "SPX").strip().upper()
+
     candidates: list[str] = []
     for strike in strikes:
         for right in ("C", "P"):
             candidates.append(
-                encode_spx_option_ticker(expiry, strike, right, strike_field_scale=args.strike_field_scale)
+                encode_spx_option_ticker(
+                    expiry,
+                    strike,
+                    right,
+                    root=root,
+                    strike_field_scale=args.strike_field_scale,
+                )
             )
 
-    try:
-        rows = fetch_option_rows_trade_security(api, candidates)
-    except Exception as exc:
-        print(f"trade/security error: {exc}", file=sys.stderr)
-        rows = []
+    rows, trade_errors = fetch_option_rows_trade_security(api, candidates)
+    if not rows and trade_errors:
+        print(trade_errors[0], file=sys.stderr)
+        if len(trade_errors) > 1:
+            print(f"(+ {len(trade_errors) - 1} more symbol errors)", file=sys.stderr)
 
     rows_by_symbol: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -151,7 +166,10 @@ def main() -> int:
         print(
             "No symbols passed filters (bid/ask, spread<=25%, delta in [0.30,0.60]).\n"
             "Try: different --expiry (0DTE must match listed SPX expiry), wider --strikes-each-side,\n"
-            "or pass --spot explicitly. If /trade/security returns no greeks, relax filters in this script.",
+            "or pass --spot explicitly. For weeklies Webull often lists the underlying as SPXW — try\n"
+            "  --underlying SPXW\n"
+            "and set TRADE_SYMBOL=SPXW in .env so OPTION_WATCHLIST matches. Ensure WEBULL_ACCOUNT_ID is set;\n"
+            "some regions require it on GET /trade/security. If /trade/security returns no greeks, relax filters in this script.",
             file=sys.stderr,
         )
         print("# Attempted (first 6): " + ",".join(candidates[:6]), file=sys.stderr)

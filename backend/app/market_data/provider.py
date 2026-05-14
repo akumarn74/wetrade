@@ -104,7 +104,7 @@ class WebullMarketDataProvider(MockMarketDataProvider):
     def option_chain(self, symbol: str = 'SPY') -> list[OptionContract]:
         # HTTP market-data snapshot does not support US_OPTION on api.webull.com (UNSUPPORTED_CATEGORY).
         # Use Trade API /trade/security per contract instead.
-        snapshots = fetch_option_rows_trade_security(self.client, self.watchlist)
+        snapshots, _errs = fetch_option_rows_trade_security(self.client, self.watchlist)
         if not isinstance(snapshots, list):
             raise RuntimeError('Webull option quote response is invalid')
 
@@ -138,7 +138,7 @@ class WebullMarketDataProvider(MockMarketDataProvider):
         return contracts
 
     def option_mark(self, option_symbol: str) -> float:
-        rows = fetch_option_rows_trade_security(self.client, [option_symbol])
+        rows, _errs = fetch_option_rows_trade_security(self.client, [option_symbol])
         if not rows:
             raise RuntimeError(f'No option quote returned for {option_symbol}')
         row = rows[0]

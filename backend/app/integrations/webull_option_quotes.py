@@ -11,7 +11,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.config import settings
 from app.integrations.spx_option_symbol import decode_spx_option_ticker
+
+try:
+    from webullsdkcore.exception.exceptions import ServerException
+except ImportError:  # pragma: no cover
+    ServerException = Exception  # type: ignore[misc, assignment]
 
 
 def _f(d: dict[str, Any], *keys: str, default: float = 0.0) -> float:
@@ -65,36 +71,87 @@ def trade_security_json_to_chain_row(raw: dict[str, Any], fallback_osi: str) -> 
     }
 
 
-def fetch_option_rows_trade_security(api: Any, option_symbols: list[str]) -> list[dict[str, Any]]:
+def _strike_query_param(strike: float) -> str:
+    if abs(strike - round(strike)) < 1e-6:
+        return str(int(round(strike)))
+    return f"{strike:.2f}"
+
+
+def _trade_security_detail_response(
+    api: Any,
+    underlying: str,
+    exp_iso: str,
+    strike_str: str,
+    inst: str,
+    *,
+    account_id: str | None,
+) -> Any:
+    """
+    Build the same GET /trade/security as `TradeInstrument.get_trade_security_detail`, but set
+    `account_id` when provided (the stock SDK method omits it; some environments return 404 without it).
+    """
+    from webullsdktrade.request.get_trade_security_detail_request import TradeSecurityDetailRequest
+
+    req = TradeSecurityDetailRequest()
+    req.set_symbol(underlying)
+    req.set_market("US")
+    req.set_instrument_super_type("OPTION")
+    req.set_instrument_type(inst)
+    req.set_strike_price(strike_str)
+    req.set_init_exp_date(exp_iso)
+    aid = (account_id or "").strip()
+    if aid:
+        req.set_account_id(aid)
+    return api.trade_instrument.client.get_response(req)
+
+
+def fetch_option_rows_trade_security(
+    api: Any,
+    option_symbols: list[str],
+    *,
+    account_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
     """
     :param api: `webullsdktrade.api.API` instance (same as `WebullAPIClient().api`).
-    :param option_symbols: Compact SPX tickers parseable by `decode_spx_option_ticker`.
+    :param option_symbols: Compact tickers parseable by `decode_spx_option_ticker` (SPX… or SPXW…).
+    :param account_id: Webull account id; defaults to ``settings.webull_account_id`` when omitted.
+    :returns: (rows, per-symbol error strings for failures).
     """
+    aid = account_id if account_id is not None else (settings.webull_account_id or "").strip() or None
     rows: list[dict[str, Any]] = []
+    errors: list[str] = []
     for osi in option_symbols:
         osi = osi.strip()
         if not osi:
             continue
         try:
-            exp, strike, cp = decode_spx_option_ticker(osi)
+            exp, strike, cp, underlying = decode_spx_option_ticker(osi)
         except ValueError:
             continue
         inst = "CALL_OPTION" if cp == "C" else "PUT_OPTION"
-        resp = api.trade_instrument.get_trade_security_detail(
-            "SPX",
-            "US",
-            "OPTION",
-            inst,
-            f"{strike:.2f}",
-            exp.isoformat(),
-        )
+        exp_iso = exp.isoformat()
+        strike_str = _strike_query_param(strike)
+        try:
+            resp = _trade_security_detail_response(
+                api,
+                underlying,
+                exp_iso,
+                strike_str,
+                inst,
+                account_id=aid,
+            )
+        except ServerException as exc:  # type: ignore[misc]
+            errors.append(f"{osi}: HTTP Status: {getattr(exc, 'http_status', '?')}, {exc}")
+            continue
         try:
             raw = resp.json()
         except (ValueError, AttributeError, json.JSONDecodeError):
+            errors.append(f"{osi}: invalid JSON in trade/security response")
             continue
         if isinstance(raw, dict) and isinstance(raw.get("data"), dict):
             raw = raw["data"]
         if not isinstance(raw, dict):
+            errors.append(f"{osi}: unexpected trade/security payload type")
             continue
         rows.append(trade_security_json_to_chain_row(raw, osi))
-    return rows
+    return rows, errors
