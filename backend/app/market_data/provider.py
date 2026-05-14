@@ -45,6 +45,14 @@ class WebullMarketDataProvider(MockMarketDataProvider):
     Webull-backed market data provider for WEBULL_PAPER/WEBULL_LIVE modes.
     """
 
+    @staticmethod
+    def _webull_symbol_for_us_stock_bars(symbol: str) -> str:
+        """Webull US_STOCK history excludes cash indices (e.g. SPX); SPY is the usual S&P 500 proxy."""
+        s = (symbol or '').strip().upper()
+        if s == 'SPX':
+            return 'SPY'
+        return s
+
     def __init__(self, mode: str):
         self.mode = mode
         self.client = WebullAPIClient().api
@@ -53,7 +61,8 @@ class WebullMarketDataProvider(MockMarketDataProvider):
             raise RuntimeError('OPTION_WATCHLIST must include at least one option symbol for Webull modes')
 
     def latest_signal_context(self, symbol: str = 'SPY') -> SignalContext:
-        bars_resp = self.client.market_data.get_history_bar(symbol, category='US_STOCK', timespan='m5', count='30')
+        bar_symbol = self._webull_symbol_for_us_stock_bars(symbol)
+        bars_resp = self.client.market_data.get_history_bar(bar_symbol, category='US_STOCK', timespan='M5', count='30')
         bars = bars_resp.json()
         if not isinstance(bars, list) or len(bars) < 21:
             raise RuntimeError('Webull history bars response does not contain enough data')

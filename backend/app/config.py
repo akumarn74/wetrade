@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     webull_app_key: str = ''
     webull_app_secret: str = ''
     webull_account_id: str = ''
-    webull_openapi_domain: str = 'https://openapi.webull.com'
+    webull_openapi_domain: str = 'api.webull.com'
     webull_region_id: str = 'us'
     option_watchlist: str = ''
     trade_symbol: str = 'SPX'
