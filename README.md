@@ -2,6 +2,8 @@
 
 Simulation-first options trading bot with hard risk gates.
 
+**Product / SPX roadmap** (current capabilities vs phased plan: dynamic chain, goals, LLM boundaries): [docs/ROADMAP_SPX_AUTOTRADE.md](docs/ROADMAP_SPX_AUTOTRADE.md).
+
 ## Quick start
 
 ```bash
@@ -28,7 +30,7 @@ uvicorn app.main:app --reload
 
 - `APP_MODE=SIM|WEBULL_PAPER|WEBULL_LIVE`
 - `TRADE_SYMBOL=SPX` (or `SPY`)
-- `OPTION_WATCHLIST` symbols must match the `TRADE_SYMBOL` prefix
+- `OPTION_WATCHLIST` symbols must match the `TRADE_SYMBOL` prefix — refresh often; helper: `cd backend && python scripts/build_spx_watchlist.py --print-env-line` (see [DEPLOY.md](DEPLOY.md))
 - `TRADING_ENABLED=false` by default
 - Daily caps: `MAX_DAILY_LOSS`, `MAX_DAILY_PROFIT`, `MAX_TRADES_PER_DAY`
 - **API hardening (any deploy beyond your laptop):** set `REQUIRE_API_KEY=true` and a long random `API_ADMIN_KEY`. Clients must send header `X-API-Key: <API_ADMIN_KEY>` on every `/api/*` route **except** `GET /api/health` (for load balancers). The dashboard has an optional field that stores the key in the browser session. For `curl`, add `-H 'X-API-Key: YOUR_KEY'`.

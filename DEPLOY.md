@@ -105,9 +105,51 @@ Use this order so you **paper trade first**, then switch to live only deliberate
 | Variable | When you need it |
 |----------|-------------------|
 | `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, `WEBULL_ACCOUNT_ID` | Any `WEBULL_PAPER` / `WEBULL_LIVE` run |
-| `OPTION_WATCHLIST` | Comma-separated symbols **from Webull**; each must start with `TRADE_SYMBOL` (e.g. `SPX` + `SPX…`) |
+| `OPTION_WATCHLIST` | Comma-separated symbols **from Webull**; each must start with `TRADE_SYMBOL` (e.g. `SPX` + `SPX…`) — see **Refreshing OPTION_WATCHLIST** below |
 | `CLAUDE_API_KEY` | Recommended if `MIN_ENTRY_CONFIDENCE` > 0 (default 0.55 in `.env.example`) |
 | `API_ADMIN_KEY` | Required if `REQUIRE_API_KEY=true` (recommended on any VPS) |
+
+### Refreshing OPTION_WATCHLIST (required for realistic paper)
+
+The bot **does not** download the full option chain. It only requests snapshots for **exact tickers** in `OPTION_WATCHLIST`. Stale strikes (e.g. from when SPX was far from today’s level) produce useless quotes or **`no_valid_contract`** even when the bar strategy fires.
+
+**Automated helper (queries Webull, filters live quotes)**
+
+From `backend/` with the same `.env` as `uvicorn` (needs Webull keys; `OPTION_WATCHLIST` may be empty):
+
+```bash
+source ../.venv-prod311/bin/activate   # or your venv
+# Default: expiry = today (US/Eastern), spot = last SPY close (proxy for SPX)
+python scripts/build_spx_watchlist.py --print-env-line
+
+# Pin spot if you want to center strikes around a level (e.g. SPX ~7500)
+python scripts/build_spx_watchlist.py --spot 7500 --print-env-line
+
+# Explicit 0DTE / weekly expiry
+python scripts/build_spx_watchlist.py --expiry 2026-05-12 --spot 7500 --print-env-line
+```
+
+Copy the printed `OPTION_WATCHLIST=...` line into `backend/.env` and **restart `uvicorn`**. If nothing passes filters, try `--strikes-each-side 6` or a different `--expiry`. If Webull uses a different strike encoding for your account, use `--strike-field-scale` (default `100` matches `SPX250106C00600000` in `.env.example`).
+
+**When to refresh**
+
+- **0DTE / intraday SPX:** at least **once per session morning**, and again if spot moves enough that your listed strikes are no longer near the money you want.
+- **Weekly / fixed lists:** whenever expiry rolls or you change strategy strikes.
+
+**What to list**
+
+1. In Webull (app or portal), open the **SPX** chain for the **expiry you trade** (often same-day for 0DTE tests).
+2. Copy **4–12** option symbols **Webull uses for OpenAPI `US_OPTION`** (same strings as in their chain / docs). Include **both calls and puts** if you want either direction to be selectable after a signal.
+3. Center strikes **around current SPX** (e.g. a few strikes above and below spot), not a short list left over from an old level.
+4. Put them in `backend/.env` as **comma-separated** values, no spaces unless your tooling strips them:
+
+   ```env
+   OPTION_WATCHLIST=SPX...,SPX...,SPX...
+   ```
+
+5. **Restart `uvicorn`** so settings reload (env is read at process start).
+
+After a signal, `ContractSelector` still filters by **delta band, volume, open interest, and bid/ask spread** (`backend/app/trading/contracts.py`). If everything is filtered out, widen the watchlist **or** relax those rules in code once you understand live liquidity.
 
 Start with:
 
