@@ -53,6 +53,13 @@ class WebullMarketDataProvider(MockMarketDataProvider):
             return 'SPY'
         return s
 
+    @staticmethod
+    def _webull_category_for_equity_bars(bar_symbol: str) -> str:
+        """Webull splits stocks vs ETFs (Data API); SPY must use US_ETF, not US_STOCK."""
+        if (bar_symbol or '').strip().upper() == 'SPY':
+            return 'US_ETF'
+        return 'US_STOCK'
+
     def __init__(self, mode: str):
         self.mode = mode
         self.client = WebullAPIClient().api
@@ -62,7 +69,8 @@ class WebullMarketDataProvider(MockMarketDataProvider):
 
     def latest_signal_context(self, symbol: str = 'SPY') -> SignalContext:
         bar_symbol = self._webull_symbol_for_us_stock_bars(symbol)
-        bars_resp = self.client.market_data.get_history_bar(bar_symbol, category='US_STOCK', timespan='M5', count='30')
+        bar_cat = self._webull_category_for_equity_bars(bar_symbol)
+        bars_resp = self.client.market_data.get_history_bar(bar_symbol, category=bar_cat, timespan='M5', count='30')
         bars = bars_resp.json()
         if not isinstance(bars, list) or len(bars) < 21:
             raise RuntimeError('Webull history bars response does not contain enough data')
