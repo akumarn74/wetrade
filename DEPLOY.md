@@ -113,9 +113,11 @@ Use this order so you **paper trade first**, then switch to live only deliberate
 
 The bot **does not** download the full option chain. It only requests snapshots for **exact tickers** in `OPTION_WATCHLIST`. Stale strikes (e.g. from when SPX was far from today’s level) produce useless quotes or **`no_valid_contract`** even when the bar strategy fires.
 
-**Automated helper (queries Webull, filters live quotes)**
+**Automated helper (queries Webull Trade `/trade/security` per contract)**
 
 From `backend/` with the same `.env` as `uvicorn` (needs Webull keys; `OPTION_WATCHLIST` may be empty):
+
+**Note:** HTTP market-data **`get_snapshot` does not support `US_OPTION`** on `api.webull.com` (error `UNSUPPORTED_CATEGORY`). The helper and app use **`trade_instrument.get_trade_security_detail`** for option bid/ask/greeks instead.
 
 ```bash
 source ../.venv-prod311/bin/activate   # or your venv

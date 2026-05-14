@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from app.config import settings
 from app.integrations.webull_client import WebullAPIClient
+from app.integrations.webull_option_quotes import fetch_option_rows_trade_security
 from app.trading.types import Candle, OptionContract, SignalContext
 
 
@@ -101,10 +102,11 @@ class WebullMarketDataProvider(MockMarketDataProvider):
         )
 
     def option_chain(self, symbol: str = 'SPY') -> list[OptionContract]:
-        snapshots_resp = self.client.market_data.get_snapshot(','.join(self.watchlist), category='US_OPTION')
-        snapshots = snapshots_resp.json()
+        # HTTP market-data snapshot does not support US_OPTION on api.webull.com (UNSUPPORTED_CATEGORY).
+        # Use Trade API /trade/security per contract instead.
+        snapshots = fetch_option_rows_trade_security(self.client, self.watchlist)
         if not isinstance(snapshots, list):
-            raise RuntimeError('Webull option snapshot response is invalid')
+            raise RuntimeError('Webull option quote response is invalid')
 
         contracts: list[OptionContract] = []
         for snap in snapshots:
@@ -117,7 +119,7 @@ class WebullMarketDataProvider(MockMarketDataProvider):
             if delta is None:
                 delta = snap.get('greeks_delta')
             if delta is None:
-                raise RuntimeError(f'Missing delta/greeks_delta for {option_symbol}; cannot enforce delta gate')
+                continue
             option_type = str(snap.get('option_type') or '')
             right = 'C' if option_type.upper().startswith('C') else 'P'
             contracts.append(
@@ -136,10 +138,10 @@ class WebullMarketDataProvider(MockMarketDataProvider):
         return contracts
 
     def option_mark(self, option_symbol: str) -> float:
-        snapshot = self.client.market_data.get_snapshot(option_symbol, category='US_OPTION').json()
-        if not snapshot or not isinstance(snapshot, list):
-            raise RuntimeError(f'No option snapshot returned for {option_symbol}')
-        row = snapshot[0]
+        rows = fetch_option_rows_trade_security(self.client, [option_symbol])
+        if not rows:
+            raise RuntimeError(f'No option quote returned for {option_symbol}')
+        row = rows[0]
         bid = float(row.get('bid_price') or row.get('bid') or 0.0)
         ask = float(row.get('ask_price') or row.get('ask') or 0.0)
         last = float(row.get('close') or row.get('last_price') or 0.0)

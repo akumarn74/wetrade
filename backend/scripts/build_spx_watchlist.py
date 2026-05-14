@@ -1,30 +1,22 @@
 #!/usr/bin/env python3
 """
-Build OPTION_WATCHLIST from live Webull market data (US_OPTION snapshots).
+Build OPTION_WATCHLIST using Webull Trade API /trade/security (per option contract).
 
-Uses SPY's last trade as a spot proxy for SPX (same as the app's bar path), generates
-near-ATM SPX option tickers for a chosen expiry, then keeps only symbols that return
-usable snapshot rows (bid/ask + greeks when present).
+HTTP market-data `get_snapshot` does **not** support `US_OPTION` on production (`UNSUPPORTED_CATEGORY`).
+This script generates near-ATM SPX tickers, resolves each via `trade_instrument.get_trade_security_detail`,
+then filters on bid/ask, spread, and delta when Webull returns greeks.
+
+Uses SPY's last close as SPX spot proxy unless you pass --spot.
 
 Run from the backend directory (loads backend/.env):
 
   cd backend && source ../.venv-prod311/bin/activate
-  python scripts/build_spx_watchlist.py
-  python scripts/build_spx_watchlist.py --spot 7525 --expiry 2026-05-12 --strikes-each-side 4
-  python scripts/build_spx_watchlist.py --print-env-line | tee /tmp/watchlist.txt
-
-Requires WEBULL_APP_KEY, WEBULL_APP_SECRET, WEBULL_REGION_ID, WEBULL_OPENAPI_DOMAIN in .env
-(same as the running app). OPTION_WATCHLIST may be empty for this script.
-
-Ticker shape matches Webull-style compact strings (see .env.example):
-  SPX + YYMMDD + C|P + 8-digit strike field = int(round(strike * 100))
-  Example: SPX250106C00600000 -> strike 6000 (6000*100 = 600000 -> zero-padded to 8 -> 00600000)
+  python scripts/build_spx_watchlist.py --spot 7500 --print-env-line
 """
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -51,24 +43,6 @@ def _round_spot_step(x: float, step: int) -> int:
     return int(round(x / step) * step)
 
 
-def _encode_spx_ticker(expiry: date, strike: int, right: str, *, strike_field_scale: int) -> str:
-    suf = f"{int(round(strike * strike_field_scale)):08d}"
-    return f"SPX{expiry.strftime('%y%m%d')}{right.upper()}{suf}"
-
-
-def _snapshot_rows(api, symbols: list[str]) -> list[dict[str, Any]]:
-    if not symbols:
-        return []
-    joined = ",".join(symbols)
-    resp = api.market_data.get_snapshot(joined, category="US_OPTION")
-    body = resp.json()
-    if isinstance(body, list):
-        return [x for x in body if isinstance(x, dict)]
-    if isinstance(body, dict):
-        return [body]
-    return []
-
-
 def _mid(row: dict[str, Any]) -> float:
     bid = float(row.get("bid_price") or row.get("bid") or 0.0)
     ask = float(row.get("ask_price") or row.get("ask") or 0.0)
@@ -89,7 +63,7 @@ def _delta(row: dict[str, Any]) -> float | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build OPTION_WATCHLIST via Webull US_OPTION snapshots")
+    parser = argparse.ArgumentParser(description="Build OPTION_WATCHLIST via Webull /trade/security")
     parser.add_argument("--spot", type=float, default=None, help="Override index spot (default: last SPY close as proxy)")
     parser.add_argument("--expiry", type=str, default=None, help="Expiration YYYY-MM-DD (default: today US/Eastern)")
     parser.add_argument("--strike-step", type=int, default=5, help="Strike spacing (SPX index points)")
@@ -111,7 +85,9 @@ def main() -> int:
         return 2
 
     try:
+        from app.integrations.spx_option_symbol import encode_spx_option_ticker
         from app.integrations.webull_client import WebullAPIClient
+        from app.integrations.webull_option_quotes import fetch_option_rows_trade_security
     except Exception as exc:  # pragma: no cover
         print(f"Import error: {exc}", file=sys.stderr)
         return 2
@@ -132,22 +108,21 @@ def main() -> int:
     candidates: list[str] = []
     for strike in strikes:
         for right in ("C", "P"):
-            candidates.append(_encode_spx_ticker(expiry, strike, right, strike_field_scale=args.strike_field_scale))
+            candidates.append(
+                encode_spx_option_ticker(expiry, strike, right, strike_field_scale=args.strike_field_scale)
+            )
 
-    # Snapshot in chunks (Webull documents batch limits; stay conservative)
-    chunk = 20
+    try:
+        rows = fetch_option_rows_trade_security(api, candidates)
+    except Exception as exc:
+        print(f"trade/security error: {exc}", file=sys.stderr)
+        rows = []
+
     rows_by_symbol: dict[str, dict[str, Any]] = {}
-    for i in range(0, len(candidates), chunk):
-        part = candidates[i : i + chunk]
-        try:
-            rows = _snapshot_rows(api, part)
-        except Exception as exc:
-            print(f"snapshot error for chunk starting {part[0]}: {exc}", file=sys.stderr)
-            continue
-        for row in rows:
-            sym = str(row.get("symbol") or "").strip()
-            if sym:
-                rows_by_symbol[sym] = row
+    for row in rows:
+        sym = str(row.get("symbol") or "").strip()
+        if sym:
+            rows_by_symbol[sym] = row
 
     usable: list[tuple[float, str, dict[str, Any]]] = []
     for sym, row in rows_by_symbol.items():
@@ -175,11 +150,10 @@ def main() -> int:
     if not picked:
         print(
             "No symbols passed filters (bid/ask, spread<=25%, delta in [0.30,0.60]).\n"
-            "Try: different --expiry (0DTE must match today's SPX listing), wider --strikes-each-side,\n"
-            "or pass --spot explicitly. If Webull rejects tickers, verify OSI format in the app chain.",
+            "Try: different --expiry (0DTE must match listed SPX expiry), wider --strikes-each-side,\n"
+            "or pass --spot explicitly. If /trade/security returns no greeks, relax filters in this script.",
             file=sys.stderr,
         )
-        # Still print attempted sample for debugging
         print("# Attempted (first 6): " + ",".join(candidates[:6]), file=sys.stderr)
         return 1
 
